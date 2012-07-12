@@ -180,7 +180,6 @@ jelford::Socket::Socket(int socket_family, int socket_type, int protocol) throw(
     {
         throw std::unique_ptr<SocketException>(new SocketException(errno, this));
     }
-    std::cerr << m_socket_descriptor << ": initialized" << std::endl;
 }
 
 jelford::Socket::Socket(int file_descriptor, bool nonblocking) : 
@@ -196,7 +195,6 @@ jelford::Socket::Socket(int file_descriptor, bool nonblocking) :
         std::cerr << "I'll allow it though, since it might be what you wanted." << std::endl;
     }
 
-    std::cerr << m_socket_descriptor << ": initialized" << std::endl;
 }
 
 jelford::Socket::Socket(Socket&& other) : 
@@ -208,6 +206,8 @@ jelford::Socket::Socket(Socket&& other) :
 
 jelford::Socket& jelford::Socket::operator=(Socket&& other)
 {
+    this->~Socket();
+
     this->m_socket_descriptor = other.m_socket_descriptor;
     this->is_nonblocking = other.is_nonblocking;
     other.m_socket_descriptor = -1;
@@ -260,7 +260,6 @@ jelford::Socket jelford::Socket::accept(sockaddr* addr, socklen_t* addrlen)
 
 jelford::Socket::~Socket()
 {
-    std::cerr << m_socket_descriptor << ": closed" << std::endl;
     if (m_socket_descriptor > 0)
     {
         ::close(m_socket_descriptor);
