@@ -39,9 +39,49 @@ const char* jelford::SocketTimeoutException::what()
     return "Timeout occurred on socket operation";
 }
 
-const char* jelford::socket_get_error(int _errno)
+const char* jelford::address_get_error(int err)
 {
-    switch(_errno) 
+    switch(err)
+    {
+        //These are all directly from linux.die.net/man/.../getaddrinfo
+        case EAI_ADDRFAMILY:
+            return "EAI_ADDRFAMILY: Specified network host does not have any addresses in the requested family";
+        case EAI_AGAIN:
+            return "EAI_AGAIN: Temporary nameserver failure; try again later";
+        case EAI_BADFLAGS:
+            return "EAI_BADFLAGS: Permanent nameserver error";
+        case EAI_FAMILY:
+            return "EAI_FAMILY: The requested address family is not supported";
+        case EAI_NODATA:
+            return "EAI_NODATA: The host exists, but does not have any network addresses defined";
+        case EAI_NONAME:
+            return "EAI_NONAME: The node or service is not known (wrong hostname?)";
+        case EAI_SERVICE:
+            return "EAI_SERVICE: Requested service is not available for the requested socket type";
+        case EAI_SOCKTYPE:
+            return "EAI_SOCKTYPE: Requested socket type is not supported";
+        case EAI_SYSTEM:
+            return "EAI_SYSTEM: System error (see errno)";
+        default:
+            return "Unknown address error";
+    }
+}
+
+jelford::AddressException::AddressException(int error, int _errno) : _err(error), _errno(_errno)
+{
+}
+
+const std::string jelford::AddressException::msg() const
+{
+    std::stringstream msg;
+    msg << address_get_error(_err);
+    msg << " [Errno: " << _errno << "]";
+    return msg.str();
+}
+
+const char* jelford::socket_get_error(int _err)
+{
+    switch(_err) 
     {
         case EBADF:
             return "EBADF: Bad file descriptor";
@@ -65,10 +105,54 @@ const char* jelford::socket_get_error(int _errno)
             return "ECONNREFUSED: Connection refused";
         case EISCONN:
             return "EISCONN: Transport endpoint is already connected";
+        case EAFNOSUPPORT:
+            return "EAFNOSUPPORT: Address family not supported by protocol";
+        case EADDRNOTAVAIL:
+            return "EADDRNOTAVAIL: Cannot assign requested address";
         default:
             return "Unknown socket error";
     }
 }
+
+jelford::Address::Address(std::string hostname, std::string port, const addrinfo& hints)
+{
+    addrinfo* result;
+    int error;
+    if ((error = ::getaddrinfo(hostname.c_str(), port.c_str(), &hints, &result)) < 0)
+    {
+        throw AddressException(error, errno);
+    }
+    
+    address = *(result->ai_addr);
+    address_length = result->ai_addrlen;
+    protocol = result->ai_protocol;
+    family = result->ai_family;
+
+    // There's actually much more data in here, which we don't currently
+    // use (it's a linked list of different alternatives)
+    _addrinfo = result;
+}
+
+jelford::Address::~Address()
+{
+    ::freeaddrinfo(_addrinfo);
+}
+
+std::string jelford::Address::family_string() const
+{
+    switch(family)
+    {
+        case PF_INET:
+            return "PF_INET";
+        case PF_INET6:
+            return "PF_INET6";
+        case PF_UNSPEC:
+            return "PF_UNSPEC";
+        default:
+            return "UNKNOWN";
+    }
+}
+
 
 int jelford::Socket::identify() const
 {
@@ -136,11 +220,26 @@ void jelford::Socket::set_reuse(bool should_reuse)
     ::setsockopt(m_socket_descriptor, SOL_SOCKET, SO_REUSEADDR, &optvalue, sizeof(optvalue));
 }
 
-void jelford::Socket::bind_to(sockaddr_in socket_address)
+void jelford::Socket::bind_to(sockaddr* socket_address, socklen_t socket_address_size)
 {
     if (::bind(m_socket_descriptor, 
-                    reinterpret_cast<sockaddr*>(&socket_address), sizeof(socket_address)) < 0)
+                    socket_address, socket_address_size) < 0)
         throw std::unique_ptr<SocketException>(new SocketException(errno, this));
+}
+
+void jelford::Socket::bind_to(jelford::Address& address)
+{
+    bind_to(&address.address, address.address_length);
+}
+
+void jelford::Socket::bind_to(sockaddr_in& socket_address)
+{
+    bind_to(reinterpret_cast<sockaddr*>(&socket_address), sizeof(socket_address));
+}
+
+void jelford::Socket::bind_to(sockaddr_in6& socket_address)
+{
+    bind_to(reinterpret_cast<sockaddr*>(&socket_address), sizeof(socket_address));
 }
 
 void jelford::Socket::listen(int backlog_size)
@@ -220,14 +319,30 @@ void jelford::Socket::write(const std::vector<unsigned char>& data) const
     write(std::move(data));
 }
 
-void jelford::Socket::connect(sockaddr_in sock_addr)
+void jelford::Socket::connect(sockaddr* sock_addr, socklen_t socket_address_size)
 {
-    if (::connect(m_socket_descriptor, reinterpret_cast<sockaddr*>(&sock_addr), sizeof(sock_addr)) < 0)
+    if (::connect(m_socket_descriptor, sock_addr, socket_address_size) < 0)
     {
         if (errno != EINPROGRESS)
             throw std::unique_ptr<SocketException>(new SocketException(errno, this));
     }
 }
+
+void jelford::Socket::connect(jelford::Address& address)
+{
+    connect(&address.address, address.address_length);
+}
+
+void jelford::Socket::connect(sockaddr_in& sock_addr)
+{
+    connect(reinterpret_cast<sockaddr*>(&sock_addr), sizeof(sock_addr));
+}
+
+void jelford::Socket::connect(sockaddr_in6& sock_addr)
+{
+    connect(reinterpret_cast<sockaddr*>(&sock_addr), sizeof(sock_addr));
+}
+
 
 int jelford::_select_for_reading(int max_fd, fd_set& file_descriptors)
 {

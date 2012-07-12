@@ -9,6 +9,9 @@
 #include <sys/select.h>
 
 #include <netinet/in.h>
+#include <netdb.h>  // addrinfo
+
+#include <string>
 
 namespace jelford 
 {
@@ -34,8 +37,36 @@ namespace jelford
             virtual const char* what();
     };
 
+    const char* address_get_error(int _errno);
+
+    class AddressException : public std::exception
+    {
+        private:
+            int _err;
+            int _errno;
+        public:
+            AddressException(int err, int _errno);
+            virtual const std::string msg() const;
+    };
+
 
     const char* socket_get_error(int _errno);
+
+    class Address
+    {
+        private:
+            addrinfo* _addrinfo;
+        public:
+            Address(std::string host, std::string port, const addrinfo& hints); 
+            virtual ~Address();
+
+            sockaddr address;
+            socklen_t address_length;
+            int protocol;
+            int family;
+            
+            std::string family_string() const;
+    };
 
     // Requires sys/socket.h
     class Socket
@@ -50,31 +81,34 @@ namespace jelford
             Socket(int file_descriptor, bool is_nonblocking);
             Socket(Socket&& other);
             Socket& operator=(Socket&& other);
+            virtual ~Socket();
     
             int identify() const;
             bool is_listening() const;
-            
+            bool other_end_has_hung_up() const;
+
+            void set_nonblocking(bool);
             void set_reuse(bool should_reuse);
-            
-            void bind_to(sockaddr_in socket_address);
+
             
             void listen(int backlogsize=32);
             Socket accept(sockaddr* addr, socklen_t* addrlen);
-            
-            void connect(sockaddr_in socket_address);
 
-            virtual ~Socket();
+            void bind_to(Address& socket_address);
+            void bind_to(sockaddr* socket_address, socklen_t socket_address_size);
+            void bind_to(sockaddr_in& socket_address);
+            void bind_to(sockaddr_in6& socket_address);
+
+            void connect(Address& socket_address);
+            void connect(sockaddr* socket_address, socklen_t socket_address_size);
+            void connect(sockaddr_in& socket_address);
+            void connect(sockaddr_in6& socket_address);
             
             std::vector<unsigned char> read(size_t length) const;
-            
             std::vector<unsigned char> read() const;
 
             void write(const std::vector<unsigned char>&& data) const;
             void write(const std::vector<unsigned char>& data) const;
-    
-            void set_nonblocking(bool);
-
-            bool other_end_has_hung_up() const;
     };
 
     void wait_for_read(const Socket* socket);
