@@ -12,17 +12,19 @@
 #include <cstring>
 #include <sys/select.h>
 #include <sys/poll.h>
+#include <sys/ioctl.h>   // ::ioctl
 
 #include "Socket.hpp"
 
-jelford::SocketException::SocketException(const int _errno, const jelford::Socket* socket) :  
-        _errno(_errno), m_socket(socket) { }
+jelford::SocketException::SocketException(
+    const int _errno, const jelford::Socket* socket, std::string where) :  
+        _errno(_errno), m_socket(socket), where(where) { }
 
 const char* jelford::SocketException::what()
 {
     std::stringstream msg;
     msg << jelford::socket_get_error(_errno);
-    msg << " (Errno: " << _errno << ")";
+    msg << " (Errno: " << _errno << ") in " << where;
     return msg.str().c_str();
 }
 
@@ -31,7 +33,7 @@ const jelford::Socket* jelford::SocketException::retrieve_socket() const
     return m_socket;
 }
 
-jelford::SocketTimeoutException::SocketTimeoutException(Socket* s) : SocketException::SocketException(0, s)
+jelford::SocketTimeoutException::SocketTimeoutException(Socket* s) : SocketException::SocketException(0, s, "timeout error")
 { }
 
 const char* jelford::SocketTimeoutException::what()
@@ -62,6 +64,8 @@ const char* jelford::address_get_error(int err)
             return "EAI_SOCKTYPE: Requested socket type is not supported";
         case EAI_SYSTEM:
             return "EAI_SYSTEM: System error (see errno)";
+        case ECONNRESET:
+            return "ECONNRESET: Connection reset by peer";
         default:
             return "Unknown address error";
     }
@@ -178,7 +182,7 @@ jelford::Socket::Socket(int socket_family, int socket_type, int protocol) throw(
     m_socket_descriptor = ::socket(socket_family, socket_type, protocol);
     if (m_socket_descriptor < 0)
     {
-        throw std::unique_ptr<SocketException>(new SocketException(errno, this));
+        throw std::unique_ptr<SocketException>(new SocketException(errno, this, "constructor"));
     }
 }
 
@@ -224,7 +228,7 @@ void jelford::Socket::bind_to(sockaddr* socket_address, socklen_t socket_address
 {
     if (::bind(m_socket_descriptor, 
                     socket_address, socket_address_size) < 0)
-        throw std::unique_ptr<SocketException>(new SocketException(errno, this));
+        throw std::unique_ptr<SocketException>(new SocketException(errno, this, "bind_to"));
 }
 
 void jelford::Socket::bind_to(jelford::Address& address)
@@ -245,7 +249,7 @@ void jelford::Socket::bind_to(sockaddr_in6& socket_address)
 void jelford::Socket::listen(int backlog_size)
 {
     if (::listen(m_socket_descriptor, backlog_size) < 0)
-        throw std::unique_ptr<SocketException>(new SocketException(errno, this));
+        throw std::unique_ptr<SocketException>(new SocketException(errno, this, "listen"));
 }
 
 jelford::Socket jelford::Socket::accept(sockaddr* addr, socklen_t* addrlen)
@@ -253,7 +257,7 @@ jelford::Socket jelford::Socket::accept(sockaddr* addr, socklen_t* addrlen)
     auto fd = ::accept(m_socket_descriptor, addr, addrlen);
     if (fd < 0)
     {
-        throw std::unique_ptr<SocketException>(new SocketException(errno, this));
+        throw std::unique_ptr<SocketException>(new SocketException(errno, this, "accept"));
     }
     return Socket(fd, is_nonblocking);
 }
@@ -273,33 +277,39 @@ std::vector<unsigned char> jelford::Socket::read(size_t length) const
     std::vector<unsigned char> data;
     ssize_t read_length = 0;
     ssize_t remaining = length;
-    size_t max_read = sizeof(buff) < static_cast<size_t>(remaining) ? sizeof(buff) : static_cast<size_t>(remaining);
+    size_t max_read;
+
+    std::stringstream err_msg;
+    int i=1;
     do
     {
         max_read = sizeof(buff) < static_cast<size_t>(remaining) ? sizeof(buff) : static_cast<size_t>(remaining);
+
+        std::cerr << m_socket_descriptor << ": Chunk " << i << " -- About to read: " << max_read << " bytes (asked for " << length << ")" << std::endl;
         read_length = ::read(m_socket_descriptor, &buff, max_read);
 
         if (read_length < 0)
-            throw std::unique_ptr<SocketException>(new SocketException(errno, this));
+        {
+            err_msg << "read(length=" << length << ", iteration=" << i << ")";
+            throw std::unique_ptr<SocketException>(new SocketException(errno, this, err_msg.str()));
+        }
 
         remaining = remaining - read_length;
         data.insert(data.end(), &buff[0], buff+read_length);
+        ++i;
     } while(remaining > 0 && max_read - read_length == 0);
 
+    std::cerr << m_socket_descriptor << " Finished reading data" << std::endl;
     return data;
 }
 
 std::vector<unsigned char> jelford::Socket::read() const
 {
-    std::vector<unsigned char> data;
-    auto buff = read(__chunk_size * 10);
-    while (buff.size() >= __chunk_size)
-    {
-        data.insert(data.end(), buff.begin(), buff.end());
-        buff = read(__chunk_size);
-    }
-    data.insert(data.end(), buff.begin(), buff.end());
-    return data;
+    int available = -1;
+    if (::ioctl(m_socket_descriptor, FIONREAD, &available) < 0)
+        throw std::unique_ptr<SocketException>(new SocketException(errno, this, "read"));
+
+    return read(static_cast<ssize_t>(available));
 }
 
 void jelford::Socket::write(const std::vector<unsigned char>&& data) const
@@ -309,7 +319,7 @@ void jelford::Socket::write(const std::vector<unsigned char>&& data) const
 
     if (::write(m_socket_descriptor, &data[0], data.size()) < 0)
     {
-        throw std::unique_ptr<SocketException>(new SocketException(errno, this));
+        throw std::unique_ptr<SocketException>(new SocketException(errno, this, "write"));
     }
 }
 
@@ -323,7 +333,7 @@ void jelford::Socket::connect(sockaddr* sock_addr, socklen_t socket_address_size
     if (::connect(m_socket_descriptor, sock_addr, socket_address_size) < 0)
     {
         if (errno != EINPROGRESS)
-            throw std::unique_ptr<SocketException>(new SocketException(errno, this));
+            throw std::unique_ptr<SocketException>(new SocketException(errno, this, "connect"));
     }
 }
 
@@ -385,7 +395,7 @@ std::vector<const jelford::Socket*> jelford::_select_for(std::vector<const Socke
     }
     else
     {
-        throw std::unique_ptr<SocketException>(new SocketException(errno, NULL));
+        throw std::unique_ptr<SocketException>(new SocketException(errno, NULL, "select"));
     }
 
     return ready_sockets;

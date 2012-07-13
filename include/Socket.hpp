@@ -22,8 +22,9 @@ namespace jelford
         private:
             const int _errno;
             const jelford::Socket* m_socket;
+            std::string where;
         public:
-            SocketException(const int _errno, const Socket* socket);
+            SocketException(const int _errno, const Socket* socket, std::string where);
             
             virtual const char* what();
             const jelford::Socket* retrieve_socket() const;
