@@ -61,10 +61,10 @@ namespace jelford
             addrinfo* _addrinfo;
         public:
             Address(std::string host, std::string port, const addrinfo& hints); 
-            Address(std::shared_ptr<sockaddr>, socklen_t, int, int);
+            Address(std::unique_ptr<sockaddr>&&, socklen_t, int, int);
             virtual ~Address();
 
-            std::shared_ptr<sockaddr> address;
+            std::unique_ptr<sockaddr> address;
             socklen_t address_length;
             int protocol;
             int family;

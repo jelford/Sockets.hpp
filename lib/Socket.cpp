@@ -119,7 +119,7 @@ const char* jelford::socket_get_error(int _err)
 }
 
 jelford::Address::Address(std::string hostname, std::string port, const addrinfo& hints)
-    : address(NULL)
+    : address()
 {
     addrinfo* result;
     int error;
@@ -138,8 +138,8 @@ jelford::Address::Address(std::string hostname, std::string port, const addrinfo
     _addrinfo = result;
 }
 
-jelford::Address::Address(std::shared_ptr<sockaddr> address, socklen_t address_length, int protocol, int family)
-    : address(address), address_length(address_length), protocol(protocol), family(family)
+jelford::Address::Address(std::unique_ptr<sockaddr>&& address, socklen_t address_length, int protocol, int family)
+    : address(std::move(address)), address_length(address_length), protocol(protocol), family(family)
 {
 }
 
