@@ -119,6 +119,7 @@ const char* jelford::socket_get_error(int _err)
 }
 
 jelford::Address::Address(std::string hostname, std::string port, const addrinfo& hints)
+    : address(NULL)
 {
     addrinfo* result;
     int error;
@@ -127,7 +128,7 @@ jelford::Address::Address(std::string hostname, std::string port, const addrinfo
         throw AddressException(error, errno);
     }
     
-    address = *(result->ai_addr);
+    address.reset(result->ai_addr);
     address_length = result->ai_addrlen;
     protocol = result->ai_protocol;
     family = result->ai_family;
@@ -233,7 +234,7 @@ void jelford::Socket::bind_to(sockaddr* socket_address, socklen_t socket_address
 
 void jelford::Socket::bind_to(jelford::Address& address)
 {
-    bind_to(&address.address, address.address_length);
+    bind_to(address.address.get(), address.address_length);
 }
 
 void jelford::Socket::bind_to(sockaddr_in& socket_address)
@@ -339,7 +340,7 @@ void jelford::Socket::connect(sockaddr* sock_addr, socklen_t socket_address_size
 
 void jelford::Socket::connect(jelford::Address& address)
 {
-    connect(&address.address, address.address_length);
+    connect(address.address.get(), address.address_length);
 }
 
 void jelford::Socket::connect(sockaddr_in& sock_addr)

@@ -13,6 +13,8 @@
 
 #include <string>
 
+#include <memory>       // std::shared_ptr
+
 namespace jelford 
 {
     class Socket;
@@ -61,7 +63,7 @@ namespace jelford
             Address(std::string host, std::string port, const addrinfo& hints); 
             virtual ~Address();
 
-            sockaddr address;
+            std::shared_ptr<sockaddr> address;
             socklen_t address_length;
             int protocol;
             int family;
