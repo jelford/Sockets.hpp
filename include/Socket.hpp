@@ -76,7 +76,7 @@ namespace jelford
     class Socket
     {
         private:
-            static const size_t __chunk_size = 256;
+            static const size_t __chunk_size = 65536;
             int m_socket_descriptor;
             bool is_nonblocking;
             Socket(Socket&) = delete;
