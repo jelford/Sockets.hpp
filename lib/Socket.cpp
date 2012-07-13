@@ -293,7 +293,6 @@ std::vector<unsigned char> jelford::Socket::read(size_t length) const
     {
         max_read = sizeof(buff) < static_cast<size_t>(remaining) ? sizeof(buff) : static_cast<size_t>(remaining);
 
-        std::cerr << m_socket_descriptor << ": Chunk " << i << " -- About to read: " << max_read << " bytes (asked for " << length << ")" << std::endl;
         read_length = ::read(m_socket_descriptor, &buff, max_read);
 
         if (read_length < 0)
@@ -307,7 +306,6 @@ std::vector<unsigned char> jelford::Socket::read(size_t length) const
         ++i;
     } while(remaining > 0 && max_read - read_length == 0);
 
-    std::cerr << m_socket_descriptor << " Finished reading data" << std::endl;
     return data;
 }
 
