@@ -145,6 +145,7 @@ jelford::Address::Address(std::unique_ptr<sockaddr>&& address, socklen_t address
 
 jelford::Address::~Address()
 {
+    address.release();
     ::freeaddrinfo(_addrinfo);
 }
 
