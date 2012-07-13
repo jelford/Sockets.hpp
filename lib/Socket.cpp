@@ -145,9 +145,12 @@ jelford::Address::Address(std::unique_ptr<sockaddr>&& address, socklen_t address
 
 jelford::Address::~Address()
 {
-    address.release();
     if (_addrinfo != NULL)
+    {
+        // This will get cleaned up by the freeaddrinfo call below
+        address.release();
         ::freeaddrinfo(_addrinfo);
+    }
 }
 
 std::string jelford::Address::family_string() const
