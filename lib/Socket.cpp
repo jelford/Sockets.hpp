@@ -138,6 +138,11 @@ jelford::Address::Address(std::string hostname, std::string port, const addrinfo
     _addrinfo = result;
 }
 
+jelford::Address::Address(std::shared_ptr<sockaddr> address, socklen_t address_length, int protocol, int family)
+    : address(address), address_length(address_length), protocol(protocol), family(family)
+{
+}
+
 jelford::Address::~Address()
 {
     ::freeaddrinfo(_addrinfo);
