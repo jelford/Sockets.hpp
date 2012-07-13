@@ -139,14 +139,15 @@ jelford::Address::Address(std::string hostname, std::string port, const addrinfo
 }
 
 jelford::Address::Address(std::unique_ptr<sockaddr>&& address, socklen_t address_length, int protocol, int family)
-    : address(std::move(address)), address_length(address_length), protocol(protocol), family(family)
+    : _addrinfo(NULL), address(std::move(address)), address_length(address_length), protocol(protocol), family(family)
 {
 }
 
 jelford::Address::~Address()
 {
     address.release();
-    ::freeaddrinfo(_addrinfo);
+    if (_addrinfo != NULL)
+        ::freeaddrinfo(_addrinfo);
 }
 
 std::string jelford::Address::family_string() const
