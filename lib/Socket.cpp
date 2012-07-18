@@ -13,6 +13,7 @@
 #include <sys/select.h>
 #include <sys/poll.h>
 #include <sys/ioctl.h>   // ::ioctl
+#include <signal.h>     
 
 #include "Socket.hpp"
 
@@ -195,6 +196,7 @@ jelford::Socket::Socket(int socket_family, int socket_type, int protocol) throw(
     {
         throw std::unique_ptr<SocketException>(new SocketException(errno, this, "constructor"));
     }
+    std::cerr << m_socket_descriptor << ": initialized explicitly" << std::endl;
 }
 
 jelford::Socket::Socket(int file_descriptor, bool nonblocking) : 
@@ -210,6 +212,7 @@ jelford::Socket::Socket(int file_descriptor, bool nonblocking) :
         std::cerr << "I'll allow it though, since it might be what you wanted." << std::endl;
     }
 
+    std::cerr << m_socket_descriptor << ": initialized from file descriptor" << std::endl;
 }
 
 jelford::Socket::Socket(Socket&& other) : 
@@ -217,6 +220,8 @@ jelford::Socket::Socket(Socket&& other) :
 {
     // Don't close it when the old Socket is de-allocated
     other.m_socket_descriptor = -1;
+
+    std::cerr << m_socket_descriptor << ": initialized via move" << std::endl;
 }
 
 jelford::Socket& jelford::Socket::operator=(Socket&& other)
@@ -227,6 +232,8 @@ jelford::Socket& jelford::Socket::operator=(Socket&& other)
     this->is_nonblocking = other.is_nonblocking;
     other.m_socket_descriptor = -1;
     return *this;
+
+    std::cerr << m_socket_descriptor << ": assigned via move" << std::endl;
 }
 
 void jelford::Socket::set_reuse(bool should_reuse)
@@ -279,6 +286,8 @@ jelford::Socket::~Socket()
     {
         ::close(m_socket_descriptor);
     }
+
+    std::cerr << m_socket_descriptor << ": deleted" << std::endl;
 }
 
 std::vector<unsigned char> jelford::Socket::read(size_t length) const
@@ -323,9 +332,6 @@ std::vector<unsigned char> jelford::Socket::read() const
 
 void jelford::Socket::write(const std::vector<unsigned char>&& data) const
 {
-    auto tmp = data;
-    tmp.push_back('\0');
-
     if (::write(m_socket_descriptor, &data[0], data.size()) < 0)
     {
         throw std::unique_ptr<SocketException>(new SocketException(errno, this, "write"));
@@ -372,54 +378,9 @@ int jelford::_select_for_writing(int max_fd, fd_set& file_descriptors)
     return ::select(max_fd+1, NULL, &file_descriptors, NULL, NULL);
 }
 
-std::vector<const jelford::Socket*> jelford::_select_for(std::vector<const Socket*>& sockets, std::function<int(int,fd_set&)> selector)
-{
-    fd_set rdfds;
-    FD_ZERO(&rdfds);
-    int max_fd = -1;
-    for (auto s : sockets)
-    {
-        int fd = s->identify();
-        FD_SET(fd, &rdfds);
-        max_fd = fd > max_fd ? fd : max_fd;
-    }
-    int rv = selector(max_fd, rdfds);
 
-    std::vector<const Socket*> ready_sockets;
-    
-    if (rv > 0)
-    {
-        for (auto s : sockets)
-        {
-            if (FD_ISSET(s->identify(), &rdfds))
-            {
-                ready_sockets.push_back(s);
-            }
-        }
-    }
-    else if (rv == 1)
-    {
-        /* select timed out */
-        throw std::unique_ptr<SocketTimeoutException>(new SocketTimeoutException(NULL));
-    }
-    else
-    {
-        throw std::unique_ptr<SocketException>(new SocketException(errno, NULL, "select"));
-    }
 
-    return ready_sockets;
 
-}
-
-const std::vector<const jelford::Socket*> jelford::select_for_reading(std::vector<const Socket*>& sockets)
-{
-    return _select_for(sockets, _select_for_reading);
-}
-
-const std::vector<const jelford::Socket*> jelford::select_for_writing(std::vector<const Socket*>& sockets)
-{
-    return _select_for(sockets, _select_for_writing);
-}
 
 void jelford::wait_for_read(const Socket* socket)
 {

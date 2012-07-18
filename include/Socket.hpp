@@ -2,8 +2,7 @@
 #define JELFORD_SOCKET_HPP
 
 #include <vector>       // Use as basic datatype in place of arrays
-#include <exception>    // Because we have grown-up error handling
-
+#include <exception>    // Because we have grown-up error handling 
 #include <functional>     // std::function
 
 #include <sys/select.h>
@@ -93,7 +92,6 @@ namespace jelford
 
             void set_nonblocking(bool);
             void set_reuse(bool should_reuse);
-
             
             void listen(int backlogsize=32);
             Socket accept(sockaddr* addr, socklen_t* addrlen);
@@ -117,11 +115,63 @@ namespace jelford
 
     void wait_for_read(const Socket* socket);
     void wait_for_write(const Socket* socket);
-    const std::vector<const Socket*> select_for_reading(std::vector<const Socket*>& sockets);
-    const std::vector<const Socket*> select_for_writing(std::vector<const Socket*>& sockets);
+
     int _select_for_reading(int, fd_set&);
     int _select_for_writing(int, fd_set&);
-    std::vector<const Socket*> _select_for(std::vector<const Socket*>& sockets, std::function<int(int, fd_set&)>);
+
+    template <typename SocketCollection>
+    SocketCollection _select_for(SocketCollection& sockets, std::function<int(int, fd_set&)> selector)
+    {
+        fd_set rdfds;
+        FD_ZERO(&rdfds);
+        int max_fd = -1;
+        for (auto s : sockets)
+        {
+            int fd = s->identify();
+            FD_SET(fd, &rdfds);
+            max_fd = fd > max_fd ? fd : max_fd;
+        }
+        int rv = selector(max_fd, rdfds);
+
+        SocketCollection ready_sockets;
+        
+        if (rv > 0)
+        {
+            for (auto s : sockets)
+            {
+                if (FD_ISSET(s->identify(), &rdfds))
+                {
+                    ready_sockets.insert(ready_sockets.end(), s);
+                }
+            }
+        }
+        else if (rv == 1)
+        {
+            /* select timed out */
+            throw std::unique_ptr<SocketTimeoutException>(new SocketTimeoutException(NULL));
+        }
+        else
+        {
+            throw std::unique_ptr<SocketException>(new SocketException(errno, NULL, "select"));
+        }
+
+        return ready_sockets;
+
+    }
+
+
+    template <typename SocketCollection>
+    const SocketCollection select_for_reading(SocketCollection& sockets)
+    {
+        return _select_for(sockets, _select_for_reading);
+    }
+
+    template <typename SocketCollection>
+    const SocketCollection select_for_writing(SocketCollection& sockets)
+    {
+        return _select_for(sockets, _select_for_writing);
+    }
+
 }
 
 #endif
