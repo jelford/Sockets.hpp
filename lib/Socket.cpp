@@ -4,6 +4,8 @@
 
 #include <sstream>      // Stringbuilder
 
+#include <tuple>
+#include <set>
 #include <algorithm>    // std::find
 
 #include <cerrno>
@@ -330,17 +332,14 @@ std::vector<unsigned char> jelford::Socket::read() const
     return read(static_cast<ssize_t>(available));
 }
 
-void jelford::Socket::write(const std::vector<unsigned char>&& data) const
+void jelford::Socket::write(const std::vector<unsigned char>& data) const
 {
+    if (data.size() == 0)
+        std::cerr << m_socket_descriptor << ": Writing zero bytes" << std::endl;
     if (::write(m_socket_descriptor, &data[0], data.size()) < 0)
     {
         throw std::unique_ptr<SocketException>(new SocketException(errno, this, "write"));
     }
-}
-
-void jelford::Socket::write(const std::vector<unsigned char>& data) const
-{
-    write(std::move(data));
 }
 
 void jelford::Socket::connect(sockaddr* sock_addr, socklen_t socket_address_size)
@@ -368,35 +367,23 @@ void jelford::Socket::connect(sockaddr_in6& sock_addr)
 }
 
 
-int jelford::_select_for_reading(int max_fd, fd_set& file_descriptors)
-{
-    return ::select(max_fd+1, &file_descriptors, NULL, NULL, NULL);
-}
-
-int jelford::_select_for_writing(int max_fd, fd_set& file_descriptors)
-{
-    return ::select(max_fd+1, NULL, &file_descriptors, NULL, NULL);
-}
-
-
-
-
-
 void jelford::wait_for_read(const Socket* socket)
 {
-    std::vector<const Socket*> s_vector;
-    s_vector.push_back(socket);
-    auto tmp = select_for_reading(s_vector);
-    if (tmp.size() != 1 || std::find(tmp.begin(), tmp.end(), socket) == tmp.end())
+    std::cerr << socket->identify() << ": waiting for read." << std::endl;
+    std::set<const Socket*> s_set, dummy_set;
+    s_set.insert(s_set.end(), socket);
+    std::tie(s_set, dummy_set, dummy_set) = select(s_set, dummy_set, dummy_set);
+    if (s_set.size() != 1 || std::find(s_set.begin(), s_set.end(), socket) == s_set.end())
         throw std::exception();
 }
 
 void jelford::wait_for_write(const Socket* socket) 
 {
-    std::vector<const Socket*> s_vector;
-    s_vector.push_back(socket);
-    auto tmp = select_for_writing(s_vector);
-    if (tmp.size() != 1 || std::find(tmp.begin(), tmp.end(), socket) == tmp.end())
+    std::cerr << socket->identify() << ": waiting for write" << std::endl;
+    std::set<const Socket*> s_set, dummy_set;
+    s_set.insert(s_set.end(), socket);
+    std::tie(dummy_set, s_set, dummy_set) = select(dummy_set, s_set, dummy_set);
+    if (s_set.size() != 1 || std::find(s_set.begin(), s_set.end(), socket) == s_set.end())
         throw std::exception();
 }
 

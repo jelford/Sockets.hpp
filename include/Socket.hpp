@@ -4,6 +4,9 @@
 #include <vector>       // Use as basic datatype in place of arrays
 #include <exception>    // Because we have grown-up error handling 
 #include <functional>     // std::function
+#include <tuple>
+
+#include <iostream>
 
 #include <sys/select.h>
 
@@ -109,69 +112,70 @@ namespace jelford
             std::vector<unsigned char> read(size_t length) const;
             std::vector<unsigned char> read() const;
 
-            void write(const std::vector<unsigned char>&& data) const;
             void write(const std::vector<unsigned char>& data) const;
     };
 
     void wait_for_read(const Socket* socket);
     void wait_for_write(const Socket* socket);
 
-    int _select_for_reading(int, fd_set&);
-    int _select_for_writing(int, fd_set&);
-
     template <typename SocketCollection>
-    SocketCollection _select_for(SocketCollection& sockets, std::function<int(int, fd_set&)> selector)
+    std::tuple<SocketCollection, SocketCollection, SocketCollection> select(SocketCollection& read_group, SocketCollection& write_group, SocketCollection& exception_group)
     {
-        fd_set rdfds;
+        fd_set rdfds, wrfds, exfds;
         FD_ZERO(&rdfds);
+        FD_ZERO(&wrfds);
+        FD_ZERO(&exfds);
         int max_fd = -1;
-        for (auto s : sockets)
-        {
-            int fd = s->identify();
-            FD_SET(fd, &rdfds);
-            max_fd = fd > max_fd ? fd : max_fd;
-        }
-        int rv = selector(max_fd, rdfds);
 
-        SocketCollection ready_sockets;
-        
+        for (auto pair : { std::make_tuple(read_group, &rdfds), std::make_tuple(write_group, &wrfds), std::make_tuple(exception_group, &exfds)})
+        {
+            for (auto s : std::get<0>(pair))
+            {
+                int fd = s->identify();
+                FD_SET(fd, std::get<1>(pair));
+                max_fd = fd > max_fd ? fd : max_fd;
+            }
+        }
+
+        int rv = ::select(max_fd + 1, (read_group.size() > 0 ? &rdfds : NULL), (write_group.size() > 0 ? &wrfds : NULL), (exception_group.size() > 0 ? &exfds : NULL), NULL);
+
+        SocketCollection read_ready, write_ready, exception_ready;
+
         if (rv > 0)
         {
-            for (auto s : sockets)
+            for (auto s : read_group)
             {
                 if (FD_ISSET(s->identify(), &rdfds))
                 {
-                    ready_sockets.insert(ready_sockets.end(), s);
+                    read_ready.insert(read_ready.end(), s);
                 }
             }
-        }
+            for (auto s : write_group)
+            {
+                if (FD_ISSET(s->identify(), &wrfds))
+                {
+                    write_ready.insert(write_ready.end(), s);
+                }
+            }
+            for (auto s : exception_group)
+            {
+                if (FD_ISSET(s->identify(), &exfds))
+                {
+                    exception_ready.insert(exception_ready.end(), s);
+                }
+            }
+        } 
         else if (rv == 1)
         {
-            /* select timed out */
             throw std::unique_ptr<SocketTimeoutException>(new SocketTimeoutException(NULL));
-        }
+        } 
         else
         {
             throw std::unique_ptr<SocketException>(new SocketException(errno, NULL, "select"));
         }
 
-        return ready_sockets;
-
+        return std::make_tuple(read_ready, write_ready, exception_ready);
     }
-
-
-    template <typename SocketCollection>
-    const SocketCollection select_for_reading(SocketCollection& sockets)
-    {
-        return _select_for(sockets, _select_for_reading);
-    }
-
-    template <typename SocketCollection>
-    const SocketCollection select_for_writing(SocketCollection& sockets)
-    {
-        return _select_for(sockets, _select_for_writing);
-    }
-
 }
 
 #endif
