@@ -165,7 +165,7 @@ namespace jelford
                 }
             }
         } 
-        else if (rv == 1)
+        else if (rv == 0)
         {
             throw std::unique_ptr<SocketTimeoutException>(new SocketTimeoutException(NULL));
         } 
